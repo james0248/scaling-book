@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# TPU session state
+.tpu-zone
+.tpu-token
+.tpu-tunnel.pid
+.tpu-tunnel.log
+.tpu-state.json
