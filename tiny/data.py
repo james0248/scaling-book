@@ -2,44 +2,36 @@ import numpy as np
 
 
 def encode_batch(idxs: np.ndarray, max_digits: int) -> tuple[np.ndarray, np.ndarray]:
-    """
-    converts index to token_ids. zero pad numbers to max_digits for ease.
+    size = 10**max_digits
 
-    we only accept 0-9, +, = (12 tokens)
-    + -> 10, = -> 11
-    """
+    lhs, rhs = idxs // size, idxs % size
+    answer = lhs + rhs
 
-    def _encode(idx: int, max_digits: int) -> tuple[np.ndarray, np.ndarray]:
-        length = 10**max_digits
-        lhs, rhs = idx // length, idx % length
-        answer = lhs + rhs
+    def int2arr(x: int, max_digits: int):
+        return x[:, None] // 10 ** np.arange(max_digits)[::-1] % 10
 
-        def int2arr(x: int, max_digits):
-            return np.array(list(f"{x:0{max_digits}}"), dtype=int)
+    token_ids = np.concat(
+        (
+            int2arr(lhs, max_digits),
+            np.full((idxs.shape[0], 1), 10),
+            int2arr(rhs, max_digits),
+            np.full((idxs.shape[0], 1), 11),
+            int2arr(answer, max_digits + 1),
+        ),
+        axis=1,
+    )
+    mask = np.concat(
+        (np.zeros(2 * max_digits + 2, dtype=bool), np.ones(max_digits + 1, dtype=bool))
+    )
 
-        out = np.concat(
-            (
-                int2arr(lhs, max_digits),
-                np.array([10]),
-                int2arr(rhs, max_digits),
-                np.array([11]),
-                int2arr(answer, max_digits + 1),
-            )
-        )
-        mask = np.concat(
-            (np.zeros(2 * max_digits + 2, dtype=bool), np.ones(max_digits + 1, dtype=bool))
-        )
-        return out, mask
-
-    v_encode = np.vectorize(_encode, excluded={"max_digits"}, signature="(),()->(n),(n)")
-    return v_encode(idxs, max_digits)
+    return token_ids, mask
 
 
 def decode_batch(token_ids: np.ndarray) -> str:
     """decodes a batch of tokens into readable string"""
 
-    VOCAB = np.array(list("0123456789+="))
-    chars = VOCAB[token_ids]
+    vocab_map = np.array(list("0123456789+="))
+    chars = vocab_map[token_ids]
     return np.ascontiguousarray(chars).view(f"<U{chars.shape[1]}").ravel()
 
 
@@ -58,14 +50,13 @@ def generate_data(
     data = rng.permutation(np.arange(size))
     data, mask = encode_batch(data, max_digits)
     eval_data, train_data = data[: int(size * split)], data[int(size * split) :]
-    eval_mask, train_mask = mask[: int(size * split)], mask[int(size * split) :]
 
-    return eval_data, eval_mask, train_data, train_mask
+    return eval_data, train_data, mask
 
 
 if __name__ == "__main__":
-    eval_data, eval_mask, train_data, train_mask = generate_data(max_digits=3, split=0.2, seed=42)
+    eval_data, train_data, mask = generate_data(max_digits=3, split=0.2, seed=42)
 
     print(eval_data[:5])
-    print(eval_mask[:5])
+    print(mask)
     print(decode_batch(eval_data[:5]))
