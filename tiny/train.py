@@ -1,13 +1,17 @@
+import functools
+
+import hydra
 import jax
 import jax.numpy as jnp
-from flax.training.train_state import TrainState
 import optax
+from flax.training.train_state import TrainState
+from hydra.utils import instantiate
+from omegaconf import DictConfig
 
 from tiny.data import generate_data
 from tiny.model import Transformer
 
 
-@jax.jit
 def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.ndarray):
     batch_size = batch.shape[0]
 
@@ -29,32 +33,64 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
     return state, loss, acc
 
 
-def main():
+@functools.partial(jax.jit, static_argnames=["batch_size"])
+@jax.jit
+def eval_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray, batch_size: int):
+    total_loss, total_acc = 0, 0
+    batch_cnt = len(batch) // batch_size
+
+    for i in range(batch_cnt):
+        eval_batch = jax.lax.dynamic_slice_in_dim(batch, i * batch_size, batch_size, axis=0)
+        loss, acc = calculate_loss_acc(state, state.params, eval_batch, mask)
+        total_loss += loss
+        total_acc += acc
+
+    return total_loss / batch_cnt, total_acc / batch_cnt
+
+
+@hydra.main(version_base=None, config_path="config")
+def main(cfg: DictConfig):
     # Prepare data
-    eval_data, train_data, mask = generate_data(max_digits=3, split=0.2, seed=42)
+    eval_data, train_data, mask = generate_data(
+        max_digits=cfg.data.max_digits, split=cfg.data.eval_split, seed=cfg.seed
+    )
+    train_cnt = len(train_data)
+    eval_data, train_data, mask = (
+        jax.device_put(eval_data),
+        jax.device_put(train_data),
+        jax.device_put(mask),
+    )
 
     # Init model
-    rng = jax.random.key(42)
+    rng = jax.random.key(cfg.seed)
     rng, inp_rng, init_rng = jax.random.split(rng, 3)
 
-    inp = jax.random.randint(inp_rng, (2, 12), 0, 12)
-    model = Transformer(n_layers=2, d_model=32, d_ffw=96, n_heads=4, n_kv=1, vocab_size=12)
+    model_cfg = cfg.model
+    inp = jax.random.randint(inp_rng, (2, 2), 0, model_cfg.vocab_size)
+    model = Transformer(
+        n_layers=model_cfg.n_layers,
+        d_model=model_cfg.d_model,
+        d_ffw=model_cfg.d_ffw,
+        n_heads=model_cfg.n_heads,
+        n_kv=model_cfg.n_kv,
+        vocab_size=model_cfg.vocab_size,
+    )
     params = model.init(init_rng, inp)
 
-    optimizer = optax.adam(learning_rate=3e-4)
+    optimizer = instantiate(cfg.optimizer)
     state = TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
 
     # Training loop
-    batch_size = 128
-    for i in range(0, len(train_data), batch_size):
-        batch = jax.device_put(train_data[i : i + batch_size])
+    train_history, eval_history = [], []
+    for i in range(train_cnt // cfg.batch_size):
+        batch = jax.lax.dynamic_slice_in_dim(train_data, i * cfg.batch_size, cfg.batch_size, axis=0)
         state, loss, acc = train_step(state, batch, mask)
-        print(f"[train step {i // batch_size + 1}]   loss: {loss:4f} | acc: {acc:4f}")
 
-        if i // batch_size % 10 == 9:
-            eval_batch = jax.device_put(eval_data)
-            loss, acc = calculate_loss_acc(state, state.params, eval_batch, mask)
-            print(f"  [eval step {i // batch_size + 1}]   loss: {loss:4f} | acc: {acc:4f}")
+        if (i + 1) % cfg.log_interval == 0:
+            train_history.append({"loss": loss, "acc": acc})
+        if (i + 1) % cfg.eval_interval == 0:
+            eval_loss, eval_acc = eval_step(state, batch, mask)
+            eval_history.append({"loss": eval_loss, "acc": eval_acc})
 
 
 if __name__ == "__main__":
