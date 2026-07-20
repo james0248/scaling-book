@@ -1,5 +1,6 @@
 seed: 42
 batch_size: 256
+eval_batch_size: 256
 log_interval: 10
 eval_interval: 100
 
