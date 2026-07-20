@@ -17,3 +17,5 @@ wheels/
 .tpu-tunnel.pid
 .tpu-tunnel.log
 .tpu-state.json
+
+outputs/
