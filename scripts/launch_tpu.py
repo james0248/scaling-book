@@ -122,8 +122,15 @@ def gcloud(*args, capture=False, check=True, quiet=False):
 
 def ssh_args(zone, *extra):
     return [
-        "compute", "tpus", "tpu-vm", "ssh", TPU_NAME,
-        f"--zone={zone}", "--worker=0", "--quiet", *extra,
+        "compute",
+        "tpus",
+        "tpu-vm",
+        "ssh",
+        TPU_NAME,
+        f"--zone={zone}",
+        "--worker=0",
+        "--quiet",
+        *extra,
     ]
 
 
@@ -133,9 +140,15 @@ def ssh_vm(zone, command, **kw):
 
 def qr_state(zone):
     return gcloud(
-        "compute", "tpus", "queued-resources", "describe", QR_ID,
-        f"--zone={zone}", "--format=value(state.state)",
-        capture=True, check=False,
+        "compute",
+        "tpus",
+        "queued-resources",
+        "describe",
+        QR_ID,
+        f"--zone={zone}",
+        "--format=value(state.state)",
+        capture=True,
+        check=False,
     )
 
 
@@ -198,10 +211,14 @@ def ensure_ssh_key():
     be in ssh-agent. Answering ssh's prompt interactively does not cache it."""
     if not SSH_KEY.exists():
         return
-    no_passphrase = subprocess.run(
-        ["ssh-keygen", "-y", "-P", "", "-f", str(SSH_KEY)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    ).returncode == 0
+    no_passphrase = (
+        subprocess.run(
+            ["ssh-keygen", "-y", "-P", "", "-f", str(SSH_KEY)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
     if no_passphrase:
         return
     fingerprint = subprocess.run(
@@ -241,9 +258,16 @@ def start_tunnel(zone):
     ensure_ssh_key()
     with open(TUNNEL_LOG, "w") as log:
         proc = subprocess.Popen(
-            ["gcloud", *ssh_args(zone), "--", "-N",
-             "-L", f"{LOCAL_PORT}:localhost:8888",
-             "-L", f"{TB_PORT}:localhost:6006"],
+            [
+                "gcloud",
+                *ssh_args(zone),
+                "--",
+                "-N",
+                "-L",
+                f"{LOCAL_PORT}:localhost:8888",
+                "-L",
+                f"{TB_PORT}:localhost:6006",
+            ],
             env=ENV,
             stdin=subprocess.DEVNULL,
             stdout=log,
@@ -305,8 +329,21 @@ def delete_qr(zone):
         state = qr_state(zone)
         if not state:
             return
-        if gcloud("compute", "tpus", "queued-resources", "delete", QR_ID,
-                  f"--zone={zone}", "--force", "--quiet", check=False, quiet=True) == 0:
+        if (
+            gcloud(
+                "compute",
+                "tpus",
+                "queued-resources",
+                "delete",
+                QR_ID,
+                f"--zone={zone}",
+                "--force",
+                "--quiet",
+                check=False,
+                quiet=True,
+            )
+            == 0
+        ):
             return
         print(f"   {state} (not deletable yet) ...")
         time.sleep(10)
@@ -323,7 +360,15 @@ def wait_for_capacity(zone):
             print("   ACTIVE")
             return
         if state in ("FAILED", "SUSPENDED"):
-            gcloud("compute", "tpus", "queued-resources", "describe", QR_ID, f"--zone={zone}", check=False)
+            gcloud(
+                "compute",
+                "tpus",
+                "queued-resources",
+                "describe",
+                QR_ID,
+                f"--zone={zone}",
+                check=False,
+            )
             die(f"queued resource ended in state {state}")
         print(f"   {state or '(not found yet)'} ...")
         time.sleep(POLL_SECONDS)
@@ -340,8 +385,10 @@ def wait_for_ssh(zone):
     die("ssh never came up.")
 
 
-SPOT_LABELS = ["spot (preemptible, reclaimed without warning)",
-               "on-demand (not preempted, needs separate quota)"]
+SPOT_LABELS = [
+    "spot (preemptible, reclaimed without warning)",
+    "on-demand (not preempted, needs separate quota)",
+]
 
 
 def select_config():
@@ -355,7 +402,9 @@ def select_config():
         die(f"unsupported ACCEL '{accel}' (choose one of {', '.join(accels)})")
 
     if SPOT_ENV is None:
-        spot = pick("2/4  Pricing", SPOT_LABELS, 0 if prev.get("spot", True) else 1) == SPOT_LABELS[0]
+        spot = (
+            pick("2/4  Pricing", SPOT_LABELS, 0 if prev.get("spot", True) else 1) == SPOT_LABELS[0]
+        )
     else:
         spot = SPOT_ENV not in ("0", "false", "no")
 
@@ -363,7 +412,10 @@ def select_config():
     zone = os.environ.get("ZONE") or pick("3/4  Zone", zones, index_of(prev.get("zone"), zones))
 
     kind = "spot" if spot else "on-demand"
-    if pick(f"4/4  Queue {accel} ({kind}) in {zone}?", ["yes, submit", "no, cancel"]) != "yes, submit":
+    if (
+        pick(f"4/4  Queue {accel} ({kind}) in {zone}?", ["yes, submit", "no, cancel"])
+        != "yes, submit"
+    ):
         sys.exit("cancelled.")
     return accel, spot, zone
 
@@ -381,21 +433,31 @@ def up():
 
     state = qr_state(zone)
     if state and prev and (prev.get("accel"), prev.get("spot")) != (accel, spot):
-        die(f"{QR_ID} already exists in {zone} as {prev.get('accel')} "
+        die(
+            f"{QR_ID} already exists in {zone} as {prev.get('accel')} "
             f"({'spot' if prev.get('spot') else 'on-demand'}). "
-            f"Run ./tpu.py delete to requeue it as {accel} ({kind}).")
+            f"Run ./tpu.py delete to requeue it as {accel} ({kind})."
+        )
     save_state(zone, accel, spot)
 
     if not state:
         print(f">> queuing {accel} ({kind}) in {zone} ...")
         gcloud(
-            "compute", "tpus", "queued-resources", "create", QR_ID,
-            f"--node-id={TPU_NAME}", f"--zone={zone}",
-            f"--accelerator-type={accel}", f"--runtime-version={runtime}",
+            "compute",
+            "tpus",
+            "queued-resources",
+            "create",
+            QR_ID,
+            f"--node-id={TPU_NAME}",
+            f"--zone={zone}",
+            f"--accelerator-type={accel}",
+            f"--runtime-version={runtime}",
             *(["--spot"] if spot else []),
         )
     elif state in ("FAILED", "SUSPENDED"):
-        gcloud("compute", "tpus", "queued-resources", "describe", QR_ID, f"--zone={zone}", check=False)
+        gcloud(
+            "compute", "tpus", "queued-resources", "describe", QR_ID, f"--zone={zone}", check=False
+        )
         die(f"queued resource is {state}. Clean up first: ./tpu.py delete")
     else:
         print(f">> reusing queued resource (state: {state})")
