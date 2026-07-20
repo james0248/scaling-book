@@ -88,9 +88,11 @@ def main(cfg: DictConfig):
 
         if (i + 1) % cfg.log_interval == 0:
             train_history.append({"loss": loss, "acc": acc})
+            print(f"[train] step: {i} |  loss: {loss} | acc: {acc}")
         if (i + 1) % cfg.eval_interval == 0:
             eval_loss, eval_acc = eval_step(state, batch, mask)
             eval_history.append({"loss": eval_loss, "acc": eval_acc})
+            print(f"[eval] step: {i} |  loss: {eval_loss} | acc: {eval_acc}")
 
 
 if __name__ == "__main__":
