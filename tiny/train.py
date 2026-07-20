@@ -1,5 +1,3 @@
-import functools
-
 import hydra
 import jax
 import jax.numpy as jnp
@@ -12,6 +10,7 @@ from tiny.data import generate_data
 from tiny.model import Transformer
 
 
+@jax.jit
 def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.ndarray):
     batch_size = batch.shape[0]
 
@@ -33,28 +32,13 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
     return state, loss, acc
 
 
-@functools.partial(jax.jit, static_argnames=["batch_size"])
-@jax.jit
-def eval_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray, batch_size: int):
-    total_loss, total_acc = 0, 0
-    batch_cnt = len(batch) // batch_size
-
-    for i in range(batch_cnt):
-        eval_batch = jax.lax.dynamic_slice_in_dim(batch, i * batch_size, batch_size, axis=0)
-        loss, acc = calculate_loss_acc(state, state.params, eval_batch, mask)
-        total_loss += loss
-        total_acc += acc
-
-    return total_loss / batch_cnt, total_acc / batch_cnt
-
-
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
     # Prepare data
     eval_data, train_data, mask = generate_data(
         max_digits=cfg.data.max_digits, split=cfg.data.eval_split, seed=cfg.seed
     )
-    train_cnt = len(train_data)
+    train_cnt, eval_cnt = len(train_data), len(eval_data)
     eval_data, train_data, mask = (
         jax.device_put(eval_data),
         jax.device_put(train_data),
@@ -90,7 +74,17 @@ def main(cfg: DictConfig):
             train_history.append({"loss": loss, "acc": acc})
             print(f"[train] step: {i} |  loss: {loss} | acc: {acc}")
         if (i + 1) % cfg.eval_interval == 0:
-            eval_loss, eval_acc = eval_step(state, batch, mask, cfg.eval_batch_size)
+            total_loss, total_acc = 0, 0
+            batch_cnt = eval_cnt // cfg.eval_batch_size
+            for i in range(batch_cnt):
+                eval_batch = jax.lax.dynamic_slice_in_dim(
+                    batch, i * cfg.eval_batch_size, cfg.eval_batch_size, axis=0
+                )
+                loss, acc = calculate_loss_acc(state, state.params, eval_batch, mask)
+                total_loss += loss
+                total_acc += acc
+
+            eval_loss, eval_acc = total_loss / batch_cnt, total_acc / batch_cnt
             eval_history.append({"loss": eval_loss, "acc": eval_acc})
             print(f"[eval] step: {i} |  loss: {eval_loss} | acc: {eval_acc}")
 
