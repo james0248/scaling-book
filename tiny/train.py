@@ -1,16 +1,17 @@
+import json
+
 import hydra
 import jax
 import jax.numpy as jnp
 import optax
 from flax.training.train_state import TrainState
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from tiny.data import generate_data
-from tiny.model import Transformer
 
 
-@jax.jit
 def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.ndarray):
     batch_size = batch.shape[0]
 
@@ -35,51 +36,32 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
     # Prepare data
-    eval_data, train_data, mask = generate_data(
-        max_digits=cfg.data.max_digits, split=cfg.data.eval_split, seed=cfg.seed
-    )
-    train_cnt, eval_cnt = len(train_data), len(eval_data)
-    eval_data, train_data, mask = (
-        jax.device_put(eval_data),
-        jax.device_put(train_data),
-        jax.device_put(mask),
-    )
+    data, mask = generate_data(max_digits=cfg.data.max_digits, seed=cfg.seed)
+    data, mask = jax.device_put(data), jax.device_put(mask)
 
     # Init model
     rng = jax.random.key(cfg.seed)
     rng, inp_rng, init_rng = jax.random.split(rng, 3)
 
-    model_cfg = cfg.model
+    model_cfg = cfg.model.config
     inp = jax.random.randint(inp_rng, (2, 2), 0, model_cfg.vocab_size)
-    model = instantiate(cfg.model)
+    model = instantiate(model_cfg)
     params = model.init(init_rng, inp)
 
     optimizer = instantiate(cfg.optimizer)
     state = TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
 
-    # Training loop
-    train_history, eval_history = [], []
-    for i in range(train_cnt // cfg.batch_size):
-        batch = jax.lax.dynamic_slice_in_dim(train_data, i * cfg.batch_size, cfg.batch_size, axis=0)
-        state, loss, acc = train_step(state, batch, mask)
+    # Training loop - log every step
+    train_history = []
+    for i in range(cfg.total_steps):
+        batch = jax.lax.dynamic_slice_in_dim(data, i * cfg.batch_size, cfg.batch_size, axis=0)
+        state, loss, _ = train_step(state, batch, mask)
+        train_history.append({"loss": float(loss), "tokens": cfg.batch_size * (i + 1)})
 
-        if (i + 1) % cfg.log_interval == 0:
-            train_history.append({"loss": loss, "acc": acc})
-            print(f"[train] step: {i} |  loss: {loss} | acc: {acc}")
-        if (i + 1) % cfg.eval_interval == 0:
-            total_loss, total_acc = 0, 0
-            batch_cnt = eval_cnt // cfg.eval_batch_size
-            for i in range(batch_cnt):
-                eval_batch = jax.lax.dynamic_slice_in_dim(
-                    batch, i * cfg.eval_batch_size, cfg.eval_batch_size, axis=0
-                )
-                loss, acc = calculate_loss_acc(state, state.params, eval_batch, mask)
-                total_loss += loss
-                total_acc += acc
-
-            eval_loss, eval_acc = total_loss / batch_cnt, total_acc / batch_cnt
-            eval_history.append({"loss": eval_loss, "acc": eval_acc})
-            print(f"[eval] step: {i} |  loss: {eval_loss} | acc: {eval_acc}")
+    # Save full log
+    with open(HydraConfig.get().runtime.output_dir + "/logs.jsonl", "w", encoding="utf-8") as f:
+        for log in train_history:
+            f.write(json.dumps(log) + "\n")
 
 
 if __name__ == "__main__":

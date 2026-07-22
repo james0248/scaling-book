@@ -36,7 +36,7 @@ def decode_batch(token_ids: np.ndarray) -> str:
 
 
 def generate_data(
-    max_digits: int, split: float, seed: int
+    max_digits: int, seed: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     generates training/eval dataset given the maximum number of digits.
@@ -49,14 +49,5 @@ def generate_data(
 
     data = rng.permutation(np.arange(size))
     data, mask = encode_batch(data, max_digits)
-    eval_data, train_data = data[: int(size * split)], data[int(size * split) :]
 
-    return eval_data, train_data, mask
-
-
-if __name__ == "__main__":
-    eval_data, train_data, mask = generate_data(max_digits=3, split=0.2, seed=42)
-
-    print(eval_data[:5])
-    print(mask)
-    print(decode_batch(eval_data[:5]))
+    return data, mask

@@ -1,0 +1,10 @@
+learning_rate: 3e-3
+
+config:
+  _target_: tiny.model.Transformer
+  n_layers: 5
+  d_model: 48
+  d_ffw: 192
+  n_heads: 6
+  n_kv: 6
+  vocab_size: 12 # digits 0-9, '+', '='
