@@ -1,0 +1,27 @@
+defaults:
+  - model: ???
+  - _self_
+
+seed: 42
+batch_size: 256
+total_steps: ${eval:'${total_flops} // (${model.flops_per_token} * 3 * (${data.max_digits} + 1) * ${batch_size})'}
+
+data:
+  max_digits: 3
+
+optimizer:
+  _target_: optax.adamw
+  learning_rate:
+    _target_: optax.cosine_decay_schedule
+    init_value: ${model.learning_rate}
+    decay_steps: ${total_steps}
+    alpha: 0.1
+
+hydra:
+  mode: MULTIRUN
+  sweep:
+    subdir: ${hydra.runtime.choices.model}_${total_steps}
+  sweeper:
+    params:
+      model: 19k,33k,49k,102k,184k,301k,524k,921k,1_62m,3_14m
+      +total_flops: 6e8,1e9,3e9,6e9,1e10,3e10,6e10,1e11,3e11

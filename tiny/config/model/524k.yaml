@@ -1,4 +1,6 @@
 learning_rate: 3e-3
+flops_per_token: 1105856
+params: 533708
 
 config:
   _target_: tiny.model.Transformer
