@@ -51,14 +51,7 @@ def main(cfg: DictConfig):
 
     model_cfg = cfg.model
     inp = jax.random.randint(inp_rng, (2, 2), 0, model_cfg.vocab_size)
-    model = Transformer(
-        n_layers=model_cfg.n_layers,
-        d_model=model_cfg.d_model,
-        d_ffw=model_cfg.d_ffw,
-        n_heads=model_cfg.n_heads,
-        n_kv=model_cfg.n_kv,
-        vocab_size=model_cfg.vocab_size,
-    )
+    model = instantiate(cfg.model)
     params = model.init(init_rng, inp)
 
     optimizer = instantiate(cfg.optimizer)
