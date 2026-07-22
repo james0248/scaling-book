@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from einops import rearrange
 
 
-class FeedForwardMLP(nn.Module):
+class DenseMLP(nn.Module):
     """SwiGLU (3 MLP gated layer)"""
 
     d_ffw: int
@@ -17,6 +17,87 @@ class FeedForwardMLP(nn.Module):
         gate = nn.swish(nn.Dense(self.d_ffw)(x))
         out = nn.Dense(d_model)(gate * act)
         return out
+
+
+class MixtureOfExpertsMLP(nn.Module):
+    """SwiGLU with multiple experts"""
+
+    n_experts: int
+    k_experts: int
+    d_ffw: int
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        weights, experts = TopKRouter(n_experts=self.n_experts, k_experts=self.k_experts)(x)
+        out = Experts(n_experts=self.n_experts, d_ffw=self.d_ffw)(x, weights, experts)
+        return out
+
+
+class Experts(nn.Module):
+    n_experts: int
+    d_ffw: int
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, weights: jnp.ndarray, experts: jnp.ndarray) -> jnp.ndarray:
+        b, t, k = experts.shape
+        d_model = x.shape[2]
+
+        experts_flat = experts.reshape(-1)
+        order = jnp.argsort(experts_flat)
+        experts_sorted = experts_flat[order]
+        expert_cnt = jnp.bincount(experts_flat, length=self.n_experts)
+
+        up_kernel = self.param(
+            "up_kernel", nn.initializers.lecun_normal(), (self.n_experts, d_model, self.d_ffw)
+        )
+        up_bias = self.param("up_bias", nn.initializers.zeros_init(), (self.n_experts, self.d_ffw))
+        gate_kernel = self.param(
+            "gate_kernel", nn.initializers.lecun_normal(), (self.n_experts, d_model, self.d_ffw)
+        )
+        gate_bias = self.param(
+            "gate_bias", nn.initializers.zeros_init(), (self.n_experts, self.d_ffw)
+        )
+        down_kernel = self.param(
+            "down_kernel", nn.initializers.lecun_normal(), (self.n_experts, self.d_ffw, d_model)
+        )
+        down_bias = self.param("down_bias", nn.initializers.zeros_init(), (self.n_experts, d_model))
+
+        def ragged_dense(
+            x: jnp.ndarray,
+            kernel: jnp.ndarray,
+            bias: jnp.ndarray,
+            cnt: jnp.ndarray,
+            sorted_idx: jnp.ndarray,
+        ) -> jnp.ndarray:
+            return jax.lax.ragged_dot(x, kernel, cnt) + bias[sorted_idx]
+
+        buf = (
+            jnp.zeros((b * t * k, d_model))
+            .at[jnp.arange(b * t * k)]
+            .set(x[order // (t * k), order // k % t])
+        )
+        act = ragged_dense(buf, up_kernel, up_bias, expert_cnt, experts_sorted)
+        gate = nn.swish(ragged_dense(buf, gate_kernel, gate_bias, expert_cnt, experts_sorted))
+        out = ragged_dense(gate * act, down_kernel, down_bias, expert_cnt, experts_sorted)
+
+        result = jnp.zeros_like(buf).at[order].set(out)
+        result = result.reshape((b, t, k, d_model))
+        result = jnp.sum(weights[..., None] * result, axis=2)
+
+        return result
+
+
+class TopKRouter(nn.Module):
+    n_experts: int
+    k_experts: int
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        logits = nn.Dense(self.k_experts)(x)
+        top_logits, top_indicies = jax.lax.top_k(logits, self.k_experts)
+        weights = nn.softmax(top_logits)
+
+        return weights, top_indicies
 
 
 def apply_rope(x: jnp.ndarray):
@@ -97,7 +178,33 @@ class Transformer(nn.Module):
         mask = jnp.tril(jnp.ones((seq_len, seq_len))).astype(jnp.bool)
         for _ in range(self.n_layers):
             x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm()(x), mask)
-            x = x + FeedForwardMLP(self.d_ffw)(nn.RMSNorm()(x))
+            x = x + DenseMLP(self.d_ffw)(nn.RMSNorm()(x))
+
+        x = nn.RMSNorm()(x)
+        out = nn.Dense(self.vocab_size)(x)
+        return out
+
+
+class MixtureOfExpertsTransformer(nn.Module):
+    n_layers: int
+    d_model: int
+    d_ffw: int
+    n_heads: int
+    n_kv: int
+    vocab_size: int
+
+    n_experts: int
+    k_experts: int
+
+    @nn.compact
+    def __call__(self, token_ids: jnp.ndarray) -> jnp.ndarray:
+        seq_len = token_ids.shape[1]
+
+        x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model)(token_ids)
+        mask = jnp.tril(jnp.ones((seq_len, seq_len))).astype(jnp.bool)
+        for _ in range(self.n_layers):
+            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm()(x), mask)
+            x = x + MixtureOfExpertsMLP(self.n_experts, self.k_experts, self.d_ffw)(nn.RMSNorm()(x))
 
         x = nn.RMSNorm()(x)
         out = nn.Dense(self.vocab_size)(x)
@@ -109,6 +216,12 @@ if __name__ == "__main__":
     rng, inp_rng, init_rng = jax.random.split(rng, 3)
 
     model = Transformer(n_layers=1, d_model=56, d_ffw=84, n_heads=4, n_kv=1, vocab_size=12)
+    inp = jax.random.randint(inp_rng, (5, 13), 0, 12)
+    params = model.init(init_rng, inp)
+
+    model = MixtureOfExpertsTransformer(
+        n_layers=1, d_model=56, d_ffw=84, n_heads=4, n_kv=1, vocab_size=12, n_experts=8, k_experts=2
+    )
     inp = jax.random.randint(inp_rng, (5, 13), 0, 12)
     params = model.init(init_rng, inp)
 
