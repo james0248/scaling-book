@@ -7,9 +7,11 @@ import optax
 from flax.training.train_state import TrainState
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from tiny.data import generate_data
+
+OmegaConf.register_new_resolver("eval", eval)
 
 
 def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.ndarray):
@@ -35,6 +37,7 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
+    print(cfg.total_steps)
     # Prepare data
     data, mask = generate_data(max_digits=cfg.data.max_digits, seed=cfg.seed)
     data, mask = jax.device_put(data), jax.device_put(mask)
@@ -56,7 +59,12 @@ def main(cfg: DictConfig):
     for i in range(cfg.total_steps):
         batch = jax.lax.dynamic_slice_in_dim(data, i * cfg.batch_size, cfg.batch_size, axis=0)
         state, loss, _ = train_step(state, batch, mask)
-        train_history.append({"loss": float(loss), "tokens": cfg.batch_size * (i + 1)})
+        train_history.append(
+            {
+                "loss": float(loss),
+                "tokens": cfg.batch_size * (i + 1) * 3 * (cfg.data.max_digits + 1),
+            }
+        )
 
     # Save full log
     with open(HydraConfig.get().runtime.output_dir + "/logs.jsonl", "w", encoding="utf-8") as f:
