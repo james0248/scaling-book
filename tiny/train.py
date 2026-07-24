@@ -29,7 +29,7 @@ def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.
     return avg_loss, avg_acc
 
 
-@jax.jit(in_shardings=(P(None), P("x"), P(None)))
+@jax.jit
 def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
     grad_fn = jax.value_and_grad(calculate_loss_acc, argnums=1, has_aux=True)
     (loss, acc), grads = grad_fn(state, state.params, batch, mask)
@@ -39,12 +39,8 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
-    # Use multi-device for kaggle notebooks
-    print(jax.devices())
-
-    device_count = jax.device_count()
-    mesh = jax.make_mesh(axis_shapes=(device_count,), axis_names=("x",))
-    shd.set_mesh(mesh)
+    if cfg.total_steps <= 0:
+        return
 
     # Prepare data
     data, mask = generate_data(
