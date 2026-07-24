@@ -39,6 +39,8 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
     # Use multi-device for kaggle notebooks
+    print(jax.devices())
+
     device_count = jax.device_count()
     mesh = jax.make_mesh(axis_shapes=(device_count,), axis_names=("x",))
     shd.set_mesh(mesh)
