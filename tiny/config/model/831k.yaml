@@ -1,4 +1,4 @@
-learning_rate: 1e-3
+learning_rate: 3e-3
 flops_per_token: 1728192
 params: 830940
 
