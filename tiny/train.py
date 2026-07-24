@@ -39,7 +39,9 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 def main(cfg: DictConfig):
     print(cfg.total_steps)
     # Prepare data
-    data, mask = generate_data(max_digits=cfg.data.max_digits, seed=cfg.seed)
+    data, mask = generate_data(
+        max_digits=cfg.data.max_digits, num_samples=cfg.data.num_samples, seed=cfg.seed
+    )
     data, mask = jax.device_put(data), jax.device_put(mask)
 
     # Init model

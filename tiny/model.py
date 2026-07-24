@@ -93,7 +93,7 @@ class TopKRouter(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        logits = nn.Dense(self.k_experts)(x)
+        logits = nn.Dense(self.n_experts)(x)
         top_logits, top_indicies = jax.lax.top_k(logits, self.k_experts)
         weights = nn.softmax(top_logits)
 

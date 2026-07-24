@@ -8,14 +8,14 @@ def encode_batch(idxs: np.ndarray, max_digits: int) -> tuple[np.ndarray, np.ndar
     answer = lhs + rhs
 
     def int2arr(x: int, max_digits: int):
-        return x[:, None] // 10 ** np.arange(max_digits)[::-1] % 10
+        return (x[:, None] // 10 ** np.arange(max_digits)[::-1] % 10).astype(np.int8)
 
     token_ids = np.concat(
         (
             int2arr(lhs, max_digits),
-            np.full((idxs.shape[0], 1), 10),
+            np.full((idxs.shape[0], 1), 10, dtype=np.int8),
             int2arr(rhs, max_digits),
-            np.full((idxs.shape[0], 1), 11),
+            np.full((idxs.shape[0], 1), 11, dtype=np.int8),
             int2arr(answer, max_digits + 1),
         ),
         axis=1,
@@ -36,7 +36,7 @@ def decode_batch(token_ids: np.ndarray) -> str:
 
 
 def generate_data(
-    max_digits: int, seed: int
+    max_digits: int, num_samples: int, seed: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     generates training/eval dataset given the maximum number of digits.
@@ -47,7 +47,7 @@ def generate_data(
     rng = np.random.default_rng(seed)
     size = 10 ** (2 * max_digits)
 
-    data = rng.permutation(np.arange(size))
+    data = rng.choice(size, num_samples)
     data, mask = encode_batch(data, max_digits)
 
     return data, mask

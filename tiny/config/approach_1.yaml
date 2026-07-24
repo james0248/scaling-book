@@ -7,7 +7,8 @@ batch_size: 256
 total_steps: ???
 
 data:
-  max_digits: 3
+  max_digits: 5
+  num_samples: 600_000 * 256
 
 optimizer:
   _target_: optax.adamw
