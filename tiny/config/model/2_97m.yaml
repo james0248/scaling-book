@@ -1,0 +1,12 @@
+learning_rate: 1e-3
+flops_per_token: 6125748
+params: 2971356
+
+config:
+  _target_: tiny.model.Transformer
+  n_layers: 17
+  d_model: 104
+  d_ffw: 416
+  n_heads: 13
+  n_kv: 13
+  vocab_size: 12 # digits 0-9, '+', '='

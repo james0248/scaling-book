@@ -4,11 +4,11 @@ defaults:
 
 seed: 42
 batch_size: 256
-total_steps: ${eval:'${total_flops} // (${model.flops_per_token} * 3 * (${data.max_digits} + 1) * ${batch_size})'}
+total_steps: ${eval:'int(${total_flops} // (${model.flops_per_token} * 3 * (${data.max_digits} + 1) * ${batch_size}))'}
 
 data:
   max_digits: 5
-  num_samples: 153_600_000
+  num_samples: ${eval:'int(${total_steps} * ${batch_size})'}
 
 optimizer:
   _target_: optax.adamw
@@ -24,5 +24,5 @@ hydra:
     subdir: ${hydra.runtime.choices.model}_${total_steps}
   sweeper:
     params:
-      model: 19k,33k,49k,102k,184k,301k,524k,921k,1_62m,3_14m
+      model: 20k,29k,35k,39k,51k,68k,80k,85k,106k,114k,132k,152k,158k,189k,206k,227k,257k,302k,334k,359k,401k,422k,461k,506k,534k,590k,624k,667k,727k,831k,879k,926k,1_00m,1_13m,1_19m,1_25m,1_34m,1_42m,1_49m,1_57m,1_75m,1_86m,2_03m,2_12m,2_23m,2_38m,2_56m,2_79m,2_97m,3_17m
       +total_flops: 3e11,6e11,1e12,3e12,6e12,1e13,3e13,6e13,1e14
