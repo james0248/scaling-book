@@ -6,14 +6,15 @@ computed exactly for our architecture (not the generic textbook formula).
 
 ## Setup / conventions
 
-For the 3-digit addition task the sequence is always `lhs + rhs = answer`, laid out as
-`3 + 1 + 3 + 1 + 4 = 12` tokens, so `seq_len (S) = 12` and `vocab_size (V) = 12`.
+For the 5-digit addition task the sequence is always `lhs + rhs = answer`, laid out as
+`5 + 1 + 5 + 1 + 6 = 18` tokens, so `seq_len (S) = 18` and `vocab_size (V) = 12`.
+(For `max_digits = d` the sequence is `2d + 1 + 1 + (d+1) = 3d + 3` tokens.)
 
 Symbols:
 
 | symbol | meaning                       |
 |--------|-------------------------------|
-| `S`    | seq_len = 12                  |
+| `S`    | seq_len = 18                  |
 | `V`    | vocab_size = 12               |
 | `D`    | `d_model`                     |
 | `F`    | `d_ffw`                       |
@@ -95,27 +96,26 @@ total_steps: ${eval:'${total_flops} // (${model.flops_per_token} * 3 * (${data.m
 
 - `* 3` — training FLOPs ≈ 3 × forward (forward + backward).
 - `* (max_digits + 1)` — trained tokens per example (the answer span; the mask has
-  `max_digits + 1` = 4 ones).
+  `max_digits + 1` = 6 ones at 5 digits).
 - `* batch_size` — examples per step.
 
-### Budget for a full pass over the dataset
+### Budget for a given number of sequences
 
-The 3-digit dataset is every `(lhs, rhs)` pair: `10^(2·max_digits) = 1,000,000` sequences.
-The training FLOPs to see all of them once (`batch_size` cancels out):
+The training FLOPs to see `n_sequences` examples (`batch_size` cancels out):
 
 ```text
 budget = flops_per_token * 3 * (max_digits + 1) * n_sequences
 ```
 
-For the **smallest model (19k)** over the full **1M** sequences:
+For the **smallest model (19k)** over **1M** sequences at 5 digits:
 
 ```text
-budget = 43,200 * 3 * 4 * 1,000,000 = 5.184e11 FLOPs  (≈ 518 GFLOP)
+budget = 44,568 * 3 * 6 * 1,000,000 = 8.022e11 FLOPs  (≈ 802 GFLOP)
 ```
 
-Note this convention only bills the `max_digits + 1 = 4` answer tokens per example. If
-you instead bill all 12 tokens the model actually runs, it is
-`flops_per_token * 12 * 3 * 1e6 = 1.555e12` FLOPs (≈ 1.56 TFLOP).
+Note this convention only bills the `max_digits + 1 = 6` answer tokens per example. If
+you instead bill all 18 tokens the model actually runs, it is
+`flops_per_token * 18 * 3 * 1e6 = 2.407e12` FLOPs (≈ 2.41 TFLOP).
 
 ## Comparison with the `6ND` approximation
 
@@ -131,16 +131,16 @@ RMSNorm scales, and biases).
 
 | Params (N) | n_layers | d_model | ffw_size | n_heads | k/q size | flops/token | 6N | Ratio (Ours / 6ND) |
 |-----------:|---------:|--------:|---------:|--------:|---------:|------------:|------------:|:------------------:|
-| 19,796     | 2  | 24  | 96   | 3  | 8 | 43,200    | 118,776    | 1.091 |
-| 34,572     | 2  | 32  | 128  | 4  | 8 | 73,968    | 207,432    | 1.070 |
-| 51,452     | 3  | 32  | 128  | 4  | 8 | 110,120   | 308,712    | 1.070 |
-| 105,876    | 4  | 40  | 160  | 5  | 8 | 223,776   | 635,256    | 1.057 |
-| 189,212    | 5  | 48  | 192  | 6  | 8 | 396,456   | 1,135,272  | 1.048 |
-| 307,604    | 6  | 56  | 224  | 7  | 8 | 640,448   | 1,845,624  | 1.041 |
-| 533,708    | 8  | 64  | 256  | 8  | 8 | 1,105,856 | 3,202,248  | 1.036 |
-| 934,556    | 9  | 80  | 320  | 10 | 8 | 1,923,176 | 5,607,336  | 1.029 |
-| 1,640,444  | 11 | 96  | 384  | 12 | 8 | 3,360,168 | 9,842,664  | 1.024 |
-| 3,172,172  | 12 | 128 | 512  | 16 | 8 | 6,459,680 | 19,033,032 | 1.018 |
+| 19,796     | 2  | 24  | 96   | 3  | 8 | 44,568    | 118,776    | 1.126 |
+| 34,572     | 2  | 32  | 128  | 4  | 8 | 75,792    | 207,432    | 1.096 |
+| 51,452     | 3  | 32  | 128  | 4  | 8 | 112,856   | 308,712    | 1.097 |
+| 105,876    | 4  | 40  | 160  | 5  | 8 | 228,336   | 635,256    | 1.078 |
+| 189,212    | 5  | 48  | 192  | 6  | 8 | 403,296   | 1,135,272  | 1.066 |
+| 307,604    | 6  | 56  | 224  | 7  | 8 | 650,024   | 1,845,624  | 1.057 |
+| 533,708    | 8  | 64  | 256  | 8  | 8 | 1,120,448 | 3,202,248  | 1.050 |
+| 934,556    | 9  | 80  | 320  | 10 | 8 | 1,943,696 | 5,607,336  | 1.040 |
+| 1,640,444  | 11 | 96  | 384  | 12 | 8 | 3,390,264 | 9,842,664  | 1.033 |
+| 3,172,172  | 12 | 128 | 512  | 16 | 8 | 6,503,456 | 19,033,032 | 1.025 |
 
 The ratio is > 1 and shrinks with scale: at small sizes the `O(S²)` attention terms,
 embeddings, and per-token normalization are a larger fraction of the total, exactly the
