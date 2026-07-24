@@ -21,7 +21,7 @@ def encode_batch(idxs: np.ndarray, max_digits: int) -> tuple[np.ndarray, np.ndar
         axis=1,
     )
     mask = np.concat(
-        (np.zeros(2 * max_digits + 2, dtype=bool), np.ones(2 * max_digits, dtype=bool))
+        (np.zeros(2 * max_digits + 1, dtype=bool), np.ones(2 * max_digits, dtype=bool))
     )
 
     return token_ids, mask

@@ -1,5 +1,5 @@
 defaults:
-  - model: 19k
+  - model: 20k
   - _self_
 
 seed: 42
@@ -8,6 +8,7 @@ total_steps: 1000
 
 data:
   max_digits: 3
+  num_samples: null
 
 optimizer:
   _target_: optax.adamw
