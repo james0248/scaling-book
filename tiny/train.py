@@ -37,7 +37,6 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
-    print(cfg.total_steps)
     # Prepare data
     data, mask = generate_data(
         max_digits=cfg.data.max_digits, num_samples=cfg.data.num_samples, seed=cfg.seed

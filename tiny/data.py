@@ -47,7 +47,7 @@ def generate_data(
     rng = np.random.default_rng(seed)
     size = 10 ** (2 * max_digits)
 
-    data = rng.choice(size, num_samples)
+    data = rng.choice(size, num_samples, replace=False)
     data, mask = encode_batch(data, max_digits)
 
     return data, mask

@@ -8,6 +8,7 @@ total_steps: ${eval:'${total_flops} // (${model.flops_per_token} * 3 * (${data.m
 
 data:
   max_digits: 5
+  num_samples: 153_600_000
 
 optimizer:
   _target_: optax.adamw
