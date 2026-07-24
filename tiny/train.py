@@ -8,6 +8,7 @@ import optax
 from flax.training.train_state import TrainState
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
+from jax.sharding import PartitionSpec as P
 from omegaconf import DictConfig, OmegaConf
 
 from tiny.data import generate_data
@@ -28,7 +29,7 @@ def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.
     return avg_loss, avg_acc
 
 
-@jax.jit(in_shardings=((), ("x",), ()))
+@jax.jit(in_shardings=(P(None), P("x"), P(None)))
 def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
     grad_fn = jax.value_and_grad(calculate_loss_acc, argnums=1, has_aux=True)
     (loss, acc), grads = grad_fn(state, state.params, batch, mask)
