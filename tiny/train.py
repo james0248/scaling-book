@@ -1,4 +1,6 @@
 import json
+from functools import partial
+from typing import Any, Callable
 
 import hydra
 import jax
@@ -9,7 +11,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
-from tiny.data import generate_data
+from tiny.data import get_batch_func
 
 OmegaConf.register_new_resolver("eval", eval)
 
@@ -29,8 +31,9 @@ def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.
     return avg_loss, avg_acc
 
 
-@jax.jit
-def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
+@partial(jax.jit, static_argnums=1)
+def train_step(state: TrainState, get_batch: Callable[[Any], tuple[jnp.ndarray, jnp.ndarray]], key):
+    batch, mask = get_batch(key)
     grad_fn = jax.value_and_grad(calculate_loss_acc, argnums=1, has_aux=True)
     (loss, acc), grads = grad_fn(state, state.params, batch, mask)
     state = state.apply_gradients(grads=grads)
@@ -40,10 +43,7 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
     # Prepare data
-    data, mask = generate_data(
-        max_digits=cfg.data.max_digits, num_samples=cfg.data.num_samples, seed=cfg.seed
-    )
-    data, mask = jax.device_put(data), jax.device_put(mask)
+    get_batch = get_batch_func(max_digits=cfg.data.max_digits, batch_size=cfg.batch_size)
 
     # Init model
     rng = jax.random.key(cfg.seed)
@@ -60,8 +60,8 @@ def main(cfg: DictConfig):
     # Training loop - log every step
     train_history = []
     for i in range(cfg.total_steps):
-        batch = jax.lax.dynamic_slice_in_dim(data, i * cfg.batch_size, cfg.batch_size, axis=0)
-        state, loss, _ = train_step(state, batch, mask)
+        batch_rng = jax.random.fold_in(rng, i)
+        state, loss, _ = train_step(state, get_batch, batch_rng)
         train_history.append(
             {
                 "loss": float(loss),

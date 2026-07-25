@@ -1,4 +1,6 @@
 import numpy as np
+import jax
+import jax.numpy as jnp
 
 
 def encode_batch(idxs: np.ndarray, max_digits: int) -> tuple[np.ndarray, np.ndarray]:
@@ -52,3 +54,47 @@ def generate_data(
     data, mask = encode_batch(data, max_digits)
 
     return data, mask
+
+
+def get_batch_func(max_digits: int, batch_size: int):
+    """function that generates multiply data on-the-fly using jax"""
+
+    def get_batch(key):
+        key1, key2 = jax.random.split(key, 2)
+
+        # think as least-significant-first
+        lhs = jax.random.randint(key1, (batch_size, max_digits), 0, 10)
+        rhs = jax.random.randint(key2, (batch_size, max_digits), 0, 10)
+
+        adder = (
+            jnp.arange(max_digits)[:, None, None] + jnp.arange(max_digits)[None, :, None]
+            == jnp.arange(2 * max_digits)[None, None, :]
+        ).astype(jnp.int8)
+        temp = jnp.einsum("bl,br,lri->bi", lhs, rhs, adder)
+
+        def step(carry, x):
+            cur = x + carry
+            return cur // 10, cur % 10
+
+        _, answer = jax.lax.scan(step, jnp.zeros((batch_size,), dtype=jnp.int32), temp.T)
+        answer = answer.T
+
+        lhs, rhs, answer = lhs[:, ::-1], rhs[:, ::-1], answer[:, ::-1]
+        data = jnp.concat(
+            (lhs, jnp.full((batch_size, 1), 10), rhs, jnp.full((batch_size, 1), 11), answer), axis=1
+        ).astype(jnp.int8)
+        mask = jnp.concat(
+            (
+                jnp.zeros(2 * max_digits + 1, dtype=jnp.bool),
+                jnp.ones(2 * max_digits, dtype=jnp.bool),
+            )
+        )
+        return data, mask
+
+    return get_batch
+
+
+if __name__ == "__main__":
+    get_batch = get_batch_func(2, 10)
+    key = jax.random.key(42)
+    print(get_batch(key))
