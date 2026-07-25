@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /approach_2_base
+  - _self_
+
+total_flops: 1e15
+
+hydra:
+  sweeper:
+    params:
+      model: 879k,926k,1_00m,1_13m,1_19m,1_25m,1_34m,1_42m,1_49m,1_57m,1_75m,1_86m,2_03m,2_12m,2_23m,2_38m,2_56m,2_79m,2_97m,3_17m

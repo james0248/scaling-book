@@ -1,5 +1,5 @@
 learning_rate: 3e-3
-flops_per_token: 2081216
+flops_per_token: 2107968
 params: 1004132
 
 config:
