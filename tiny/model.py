@@ -9,13 +9,15 @@ class DenseMLP(nn.Module):
 
     d_ffw: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
         d_model = x.shape[2]
 
-        act = nn.Dense(self.d_ffw)(x)
-        gate = nn.swish(nn.Dense(self.d_ffw)(x))
-        out = nn.Dense(d_model)(gate * act)
+        act = nn.Dense(self.d_ffw, dtype=self.dtype)(x)
+        gate = nn.swish(nn.Dense(self.d_ffw, dtype=self.dtype)(x))
+        out = nn.Dense(d_model, dtype=self.dtype)(gate * act)
         return out
 
 
@@ -26,16 +28,24 @@ class MixtureOfExpertsMLP(nn.Module):
     k_experts: int
     d_ffw: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        weights, experts = TopKRouter(n_experts=self.n_experts, k_experts=self.k_experts)(x)
-        out = Experts(n_experts=self.n_experts, d_ffw=self.d_ffw)(x, weights, experts)
+        weights, experts = TopKRouter(
+            n_experts=self.n_experts, k_experts=self.k_experts, dtype=self.dtype
+        )(x)
+        out = Experts(n_experts=self.n_experts, d_ffw=self.d_ffw, dtype=self.dtype)(
+            x, weights, experts
+        )
         return out
 
 
 class Experts(nn.Module):
     n_experts: int
     d_ffw: int
+
+    dtype: jnp.dtype = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, weights: jnp.ndarray, experts: jnp.ndarray) -> jnp.ndarray:
@@ -69,10 +79,12 @@ class Experts(nn.Module):
             cnt: jnp.ndarray,
             sorted_idx: jnp.ndarray,
         ) -> jnp.ndarray:
-            return jax.lax.ragged_dot(x, kernel, cnt) + bias[sorted_idx]
+            return jax.lax.ragged_dot(x, kernel.astype(self.dtype), cnt) + bias[sorted_idx].astype(
+                self.dtype
+            )
 
         buf = (
-            jnp.zeros((b * t * k, d_model))
+            jnp.zeros((b * t * k, d_model), dtype=self.dtype)
             .at[jnp.arange(b * t * k)]
             .set(x[order // (t * k), order // k % t])
         )
@@ -91,16 +103,18 @@ class TopKRouter(nn.Module):
     n_experts: int
     k_experts: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        logits = nn.Dense(self.n_experts)(x)
+        logits = nn.Dense(self.n_experts, dtype=self.dtype)(x)
         top_logits, top_indicies = jax.lax.top_k(logits, self.k_experts)
-        weights = nn.softmax(top_logits)
+        weights = nn.softmax(top_logits.astype(jnp.float32)).astype(self.dtype)
 
         return weights, top_indicies
 
 
-def apply_rope(x: jnp.ndarray):
+def apply_rope(x: jnp.ndarray, dtype=jnp.bfloat16):
     """
     expects (b, t, n, h) shape
 
@@ -111,14 +125,14 @@ def apply_rope(x: jnp.ndarray):
     """
     _, t, _, d = x.shape
 
-    theta = 10_000 ** (-2 * jnp.arange(d // 2) / d)
+    theta = 10_000 ** (-2 * jnp.arange(d // 2, dtype=jnp.float32) / d)
     thetas = jnp.outer(jnp.arange(t), theta)
     cos = jnp.expand_dims(jnp.cos(thetas), axis=1)
     sin = jnp.expand_dims(jnp.sin(thetas), axis=1)
 
     out1 = cos * x[..., : d // 2] - sin * x[..., d // 2 :]
     out2 = sin * x[..., : d // 2] + cos * x[..., d // 2 :]
-    return jnp.concat((out1, out2), axis=-1)
+    return jnp.concat((out1, out2), axis=-1).astype(dtype)
 
 
 def dot_product_attention(
@@ -129,8 +143,9 @@ def dot_product_attention(
 
     q = rearrange(q, "b t (k g) h -> b t k g h", g=group_size)
     scores = jnp.einsum("btkgh,bskh->btskg", q, k)
-    weights = nn.softmax(scores / jnp.sqrt(d_head), axis=2, where=mask[..., None, None])
-    attn = jnp.einsum("btskg,bskh->btkgh", weights, v)
+    scores = (scores / jnp.sqrt(d_head)).astype(jnp.float32)
+    weights = nn.softmax(scores, axis=2, where=mask[..., None, None])
+    attn = jnp.einsum("btskg,bskh->btkgh", weights.astype(jnp.bfloat16), v)
     attn = rearrange(attn, "b t k g h -> b t (k g h)")
     return attn
 
@@ -141,21 +156,23 @@ class AttentionBlock(nn.Module):
     n_heads: int
     n_kv: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, x: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
         d_model = x.shape[2]
         d_head = d_model // self.n_heads
 
-        q = nn.Dense(d_head * self.n_heads)(x)
-        k = nn.Dense(d_head * self.n_kv)(x)
-        v = nn.Dense(d_head * self.n_kv)(x)
+        q = nn.Dense(d_head * self.n_heads, dtype=self.dtype)(x)
+        k = nn.Dense(d_head * self.n_kv, dtype=self.dtype)(x)
+        v = nn.Dense(d_head * self.n_kv, dtype=self.dtype)(x)
 
         q = rearrange(q, "b t (n h) -> b t n h", h=d_head)
         k = rearrange(k, "b s (k h) -> b s k h", h=d_head)
         v = rearrange(v, "b s (k h) -> b s k h", h=d_head)
 
-        q = apply_rope(nn.RMSNorm()(q))
-        k = apply_rope(nn.RMSNorm()(k))
+        q = apply_rope(nn.RMSNorm(dtype=self.dtype)(q), dtype=self.dtype)
+        k = apply_rope(nn.RMSNorm(dtype=self.dtype)(k), dtype=self.dtype)
 
         """
         here i've implemented the dot product attention manually, but this need extra care for fp32 conversion for softmax
@@ -166,7 +183,7 @@ class AttentionBlock(nn.Module):
         # attn = dot_product_attention(q, k, v, mask)
         attn = jax.nn.dot_product_attention(q, k, v, mask=mask)
         attn = rearrange(attn, "b t n h -> b t (n h)")
-        out = nn.Dense(d_model)(attn)
+        out = nn.Dense(d_model, dtype=self.dtype)(attn)
         return out
 
 
@@ -178,18 +195,22 @@ class Transformer(nn.Module):
     n_kv: int
     vocab_size: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, token_ids: jnp.ndarray) -> jnp.ndarray:
         seq_len = token_ids.shape[1]
 
-        x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model)(token_ids)
+        x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model, dtype=self.dtype)(
+            token_ids
+        )
         mask = jnp.tril(jnp.ones((seq_len, seq_len))).astype(jnp.bool)
         for _ in range(self.n_layers):
-            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm()(x), mask)
-            x = x + DenseMLP(self.d_ffw)(nn.RMSNorm()(x))
+            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm(dtype=self.dtype)(x), mask)
+            x = x + DenseMLP(self.d_ffw)(nn.RMSNorm(dtype=self.dtype)(x))
 
-        x = nn.RMSNorm()(x)
-        out = nn.Dense(self.vocab_size)(x)
+        x = nn.RMSNorm(dtype=self.dtype)(x)
+        out = nn.Dense(self.vocab_size, dtype=self.dtype)(x)
         return out
 
 
@@ -204,18 +225,24 @@ class MixtureOfExpertsTransformer(nn.Module):
     n_experts: int
     k_experts: int
 
+    dtype: jnp.dtype = jnp.bfloat16
+
     @nn.compact
     def __call__(self, token_ids: jnp.ndarray) -> jnp.ndarray:
         seq_len = token_ids.shape[1]
 
-        x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model)(token_ids)
+        x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model, dtype=self.dtype)(
+            token_ids
+        )
         mask = jnp.tril(jnp.ones((seq_len, seq_len))).astype(jnp.bool)
         for _ in range(self.n_layers):
-            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm()(x), mask)
-            x = x + MixtureOfExpertsMLP(self.n_experts, self.k_experts, self.d_ffw)(nn.RMSNorm()(x))
+            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm(dtype=self.dtype)(x), mask)
+            x = x + MixtureOfExpertsMLP(self.n_experts, self.k_experts, self.d_ffw)(
+                nn.RMSNorm(dtype=self.dtype)(x)
+            )
 
-        x = nn.RMSNorm()(x)
-        out = nn.Dense(self.vocab_size)(x)
+        x = nn.RMSNorm(dtype=self.dtype)(x)
+        out = nn.Dense(self.vocab_size, dtype=self.dtype)(x)
         return out
 
 

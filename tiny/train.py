@@ -3,12 +3,10 @@ import json
 import hydra
 import jax
 import jax.numpy as jnp
-import jax.sharding as shd
 import optax
 from flax.training.train_state import TrainState
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
-from jax.sharding import PartitionSpec as P
 from omegaconf import DictConfig, OmegaConf
 
 from tiny.data import generate_data
@@ -20,7 +18,9 @@ def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.
     batch_size = batch.shape[0]
 
     logits = state.apply_fn(params, batch)[:, :-1, :]
-    loss = optax.softmax_cross_entropy_with_integer_labels(logits, batch[..., 1:])
+    loss = optax.softmax_cross_entropy_with_integer_labels(
+        logits.astype(jnp.float32), batch[..., 1:]
+    )
     avg_loss = loss.sum(where=mask) / (mask.sum() * batch_size)
 
     acc = jnp.argmax(logits, axis=2) == batch[..., 1:]
@@ -39,9 +39,6 @@ def train_step(state: TrainState, batch: jnp.ndarray, mask: jnp.ndarray):
 
 @hydra.main(version_base=None, config_path="config")
 def main(cfg: DictConfig):
-    if cfg.total_steps <= 0:
-        return
-
     # Prepare data
     data, mask = generate_data(
         max_digits=cfg.data.max_digits, num_samples=cfg.data.num_samples, seed=cfg.seed
