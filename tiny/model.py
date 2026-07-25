@@ -157,7 +157,15 @@ class AttentionBlock(nn.Module):
         q = apply_rope(nn.RMSNorm()(q))
         k = apply_rope(nn.RMSNorm()(k))
 
-        attn = dot_product_attention(q, k, v, mask)
+        """
+        here i've implemented the dot product attention manually, but this need extra care for fp32 conversion for softmax
+        and also slower than the jax's official dot product attention since it doesn't support flash attention.
+        i'll leave the implementation here for educational and learning purposes, but for the actual training
+        i'll use jax's attention to get advantage from the optimization and stability.
+        """
+        # attn = dot_product_attention(q, k, v, mask)
+        attn = jax.nn.dot_product_attention(q, k, v, mask=mask)
+        attn = rearrange(attn, "b t n h -> b t (n h)")
         out = nn.Dense(d_model)(attn)
         return out
 
