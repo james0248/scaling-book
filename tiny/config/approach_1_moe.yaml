@@ -25,5 +25,8 @@ hydra:
     subdir: ${hydra.runtime.choices.model}_${total_steps}
   sweeper:
     params:
-      model: moe_20k,moe_29k,moe_35k,moe_39k,moe_51k,moe_68k,moe_80k,moe_85k,moe_106k,moe_114k,moe_132k,moe_152k,moe_158k,moe_189k,moe_206k,moe_227k,moe_257k,moe_302k,moe_334k,moe_359k,moe_401k,moe_422k,moe_461k,moe_506k,moe_534k,moe_590k,moe_624k,moe_667k,moe_727k,moe_831k,moe_879k,moe_926k,moe_1_00m,moe_1_13m,moe_1_19m,moe_1_25m,moe_1_34m,moe_1_42m,moe_1_49m,moe_1_57m,moe_1_75m,moe_1_86m,moe_2_03m,moe_2_12m,moe_2_23m,moe_2_38m,moe_2_56m,moe_2_79m,moe_2_97m,moe_3_17m
+      # 1-in-4 subsample of the dense family: keep every 4th model by size
+      # (index 0, 4, 8, ...). Trades resolution for wall-clock — MoE runs are
+      # noticeably slower per model than dense due to ragged_dot overhead.
+      model: moe_20k,moe_51k,moe_106k,moe_158k,moe_257k,moe_401k,moe_534k,moe_727k,moe_1_00m,moe_1_34m,moe_1_75m,moe_2_23m,moe_2_97m
       total_steps: 4000,8000,16000,32000

@@ -8,4 +8,4 @@ total_flops: 6e12
 hydra:
   sweeper:
     params:
-      model: moe_20k,moe_29k,moe_35k,moe_39k,moe_51k,moe_68k,moe_80k,moe_85k,moe_106k,moe_114k,moe_132k,moe_152k
+      model: moe_20k,moe_35k,moe_51k,moe_80k,moe_106k,moe_132k
