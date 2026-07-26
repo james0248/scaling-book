@@ -1,0 +1,14 @@
+learning_rate: 1e-2
+flops_per_token: 294525
+params: 132912
+total_params: 426312
+config:
+  _target_: tiny.model.MixtureOfExpertsTransformer
+  n_layers: 5
+  d_model: 40
+  d_ffw: 160
+  n_heads: 5
+  n_kv: 5
+  vocab_size: 12
+  n_experts: 4
+  k_experts: 1

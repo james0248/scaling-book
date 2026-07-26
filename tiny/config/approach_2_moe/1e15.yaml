@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /approach_2_moe_base
+  - _self_
+
+total_flops: 1e15
+
+hydra:
+  sweeper:
+    params:
+      model: moe_667k,moe_727k,moe_831k,moe_879k,moe_926k,moe_1_00m,moe_1_13m,moe_1_19m,moe_1_25m,moe_1_34m,moe_1_42m,moe_1_49m,moe_1_57m,moe_1_75m,moe_1_86m,moe_2_03m,moe_2_12m,moe_2_23m,moe_2_38m,moe_2_56m,moe_2_79m,moe_2_97m,moe_3_17m
