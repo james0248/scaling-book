@@ -1,0 +1,11 @@
+learning_rate: 1e-2
+flops_per_token: 11792
+params: 4764
+config:
+  _target_: tiny.model.Transformer
+  n_layers: 1
+  d_model: 16
+  d_ffw: 64
+  n_heads: 2
+  n_kv: 2
+  vocab_size: 12
