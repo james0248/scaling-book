@@ -53,6 +53,10 @@ ACCELERATORS = {
         "us-west1-c us-south1-a us-west4-a europe-west4-a asia-northeast1-b".split(),
         "v2-alpha-tpuv5-lite",
     ),
+    "v5litepod-1": (
+        "us-west1-c us-south1-a us-west4-a europe-west4-a asia-northeast1-b".split(),
+        "v2-alpha-tpuv5-lite",
+    ),
 }
 
 HERE = Path(__file__).resolve().parent
