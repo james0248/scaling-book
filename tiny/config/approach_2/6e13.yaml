@@ -8,4 +8,4 @@ total_flops: 6e13
 hydra:
   sweeper:
     params:
-      model: 189k,206k,227k,257k,302k,334k,359k,401k,422k,461k,506k,534k,590k,624k,667k,727k,831k,879k,926k,1_00m
+      model: 51k,68k,80k,85k,106k,114k,132k,152k,158k,189k,206k,227k,257k,302k,334k,359k,401k,422k,461k,506k,534k,590k
