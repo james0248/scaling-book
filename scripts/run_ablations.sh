@@ -13,7 +13,8 @@ VARIANTS=(
 )
 
 for i in "${!VARIANTS[@]}"; do
-  TPU_VISIBLE_DEVICES=$i uv run python -m tiny.train -cn config \
+  TPU_VISIBLE_DEVICES=$i TPU_PROCESS_BOUNDS=1,1,1 TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 \
+    uv run python -m tiny.train -cn config \
     model=3_17m total_steps=128000 seed=$SEED ${VARIANTS[$i]} \
     hydra.run.dir=outputs/ablations/${NAMES[$i]}_s$SEED &
 done

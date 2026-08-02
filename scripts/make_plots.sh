@@ -35,5 +35,9 @@ echo "=== phase transition ==="
 uv run python -m tiny.transition
 
 echo
+echo "=== ablations ==="
+uv run python -m tiny.analyze_ablations
+
+echo
 echo "figures written:"
 find plots -name '*.png' | sort
