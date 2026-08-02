@@ -67,5 +67,4 @@ def annotate_optimum(ax, x, y, label, color=TEAL):
     x0 = ax.get_xlim()[0]
     y0 = ax.get_ylim()[0]
     ax.plot([x0, x, x], [y, y, y0], color=color, lw=0.9, zorder=5)
-    ax.annotate(label, (x0, y), xytext=(3, 3), textcoords="offset points",
-                fontsize=8, color=color)
+    ax.annotate(label, (x0, y), xytext=(3, 3), textcoords="offset points", fontsize=8, color=color)

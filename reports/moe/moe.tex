@@ -55,10 +55,10 @@ token order, and biases are outside the scope of this report. Written as
 three \texttt{jax.lax.ragged\_dot} calls, this lands two $(m, f)$
 intermediates in HBM and reads them back, so $6mf$ elements of intermediate
 activations are communicated through memory between the three matmuls. I
-fuse the up, gate, and down projections into a single Pallas
-kernel that keeps those intermediates in VMEM, removing that communication
-entirely, and measure it against the reference on one TPU v5e core under
-JAX 0.6.2, in bfloat16.
+fuse the up, gate, and down projections into a single Pallas kernel that
+keeps those intermediates in VMEM. Every measurement below compares that
+kernel against the reference on one TPU v5e core under JAX 0.6.2, in
+bfloat16.
 
 \section{The fused kernel}
 
@@ -134,7 +134,7 @@ output matches the reference to a relative and absolute tolerance of
 $2\e{-2}$ at every point below. At the reference shape
 $(m, d, f, e) = (16384, 1024, 4096, 8)$ the fused kernel is $1.59\times$
 faster, 3.09\,ms against 4.90\,ms. The removed traffic accounts for all of
-that: the reference's elementwise stage does no matmul work and streams
+that. The reference's elementwise stage does no matmul work and streams
 $3mf$ elements in 946\,\textmu s, so the $6mf$ elements the fusion
 eliminates are worth 1.89\,ms at the same rate, against a measured saving of
 1.82\,ms.
@@ -152,23 +152,25 @@ in (d) $f/d$ stays at 4.}
 \label{fig:sweeps}
 \end{figure}
 
-The expert count sweep (Figure~\ref{fig:sweeps}a) shows a rise and then a
-collapse. The speedup improves from 1.37 at one expert to 1.75 at 32
-experts, then falls to 1.03 at 128. The token count is fixed, so the mean
+The expert count sweep (Figure~\ref{fig:sweeps}a) rises to a peak and then
+falls. The speedup improves from 1.37 at one expert to 1.75 at 32 experts,
+then drops to 1.03 at 128. The token count is fixed, so the mean
 group size is $m/e$ and it shrinks as experts are added. Each expert's three
 weight slabs are read to serve only the rows of its own group, which makes
 the arithmetic intensity with respect to weight traffic equal to the group
-size in FLOPs per byte. Once that number is small, both implementations
-spend their time streaming weights and their rates converge. The fusion
+size in FLOPs per byte. Once that number is small, the reference and the
+fused kernel both spend their time streaming those weights, and their rates
+converge. The fusion
 removes communication between operations. It cannot remove traffic that the
 operation itself requires.
 
 The token count sweep (Figure~\ref{fig:sweeps}b) holds the group size at
 2048 rows and grows the expert count with the token count. The speedup rises
 from 0.95 at $m = 2048$ to 1.59 at $m = 16384$, then settles near 1.47. The
-loss at the smallest point is a pipeline that never fills. One expert and
-2048 rows give only 8 row tiles, so the prologue and the epilogue are a
-large fraction of the run.
+kernel is slower only at the smallest point, where one expert and 2048 rows
+give 8 row tiles. I did not profile that shape, so I cannot divide the loss
+between the pipeline's fill and drain, the padding gathers, and fixed launch
+cost.
 
 The hidden dimension sweep (Figure~\ref{fig:sweeps}c) is the regime the
 fusion targets. With $d$ fixed at 1024, the speedup rises monotonically from
@@ -177,10 +179,10 @@ across the whole range, because its intermediate traffic and its FLOPs both
 grow in proportion to $f$ and the ratio between them does not change. The
 fused kernel does not pay that traffic, so its rate climbs instead.
 
-The model dimension sweep (Figure~\ref{fig:sweeps}d) is the weakest result.
-The speedup peaks at 1.59 at $d = 1024$ and falls away on both sides, to
-0.75 at $d = 256$ and 0.91 at $d = 2048$. Both ends are failures of the
-block-size rule rather than of the fusion. At $d = 256$ the rule yields
+The model dimension sweep (Figure~\ref{fig:sweeps}d) peaks in the middle of
+its range. The speedup is 1.59 at $d = 1024$, 0.75 at $d = 256$, and 0.91 at
+$d = 2048$. Both ends are failures of the block-size rule rather than of the
+fusion. At $d = 256$ the rule yields
 tiles that are too small for the MXU. At $d = 2048$ it gives the first shape
 in any sweep with $b_j < d$, which makes the kernel run the full $k$ loop
 once per $j$ block while only the last step does work.
@@ -188,7 +190,7 @@ once per $j$ block while only the last step does work.
 \subsection{Aspect ratio at equal FLOPs}
 
 The $f$ sweep raises $f/d$ and the total work together, so it cannot
-separate the two. Holding $df$ fixed does: the three points in
+separate the two. Holding $df$ fixed separates them. The three points in
 Figure~\ref{fig:ratio} share $m$, $e$, and FLOP count, and differ only in
 the shape of the MLP. Only three such points satisfy $f > d$ with $b_k$ a
 multiple of 128.
@@ -223,15 +225,16 @@ The speedup rises from 1.59 to 2.12, and the mechanism is the last column of
 Table~\ref{tab:ratio}. At a fixed $df$ product the intermediate volume $mf$
 grows as the square root of the aspect ratio, so each factor of four in
 $f/d$ doubles the traffic the reference must move while its FLOPs and weight
-traffic stay constant. The fused kernel slows as well, since at $d = 256$ its
-matmuls are much narrower in the contracted dimension, but by less than half
-as much.
+traffic stay constant. The fused kernel also slows over the same range, because at
+$d = 256$ its matmuls are much narrower in the contracted dimension. Its
+rate falls by less than half as much as the reference's.
 
 \subsection{Routing skew}
 
-Everything so far uses balanced experts, the one routing distribution a real
-MoE never produces. Figure~\ref{fig:skew} scales the router logits by a skew
-parameter, so larger values concentrate tokens on fewer experts.
+All measurements so far use balanced experts. Real routing does not produce
+them, so I repeated the comparison with skewed assignments.
+Figure~\ref{fig:skew} scales the router logits by a skew parameter, and
+larger values concentrate tokens on fewer experts.
 
 \begin{figure}[H]
 \centering
@@ -251,36 +254,42 @@ times the mean and 26 experts end up empty.
 The difference is the padding tax. A group of $s$ rows costs
 $\lceil s / b_m \rceil$ tiles, so the waste is at most $b_m - 1$ rows per
 non-empty group and empty groups cost nothing. At eight experts the mean
-group is 2048 rows against $b_m = 256$, so the waste is negligible; at 64
+group is 2048 rows against $b_m = 256$, so the waste is negligible. At 64
 experts it is 256 rows against $b_m = 128$, and skew drives many groups
-below a full tile. What matters is the ratio of group size to tile height,
-not the imbalance itself.
+below a full tile. The degradation therefore follows the ratio of group size
+to tile height.
 
 \section{Conclusion}
 
-The fused kernel beats three \rd{} calls whenever the intermediates it
-removes are large next to the traffic that remains, and whenever there is
-enough work to keep its pipeline full. Over the shape sweeps it is faster at
-all but three of the 24 points, and the largest speedup measured anywhere is
-2.12.
+The fusion removes the intermediate traffic and changes nothing else. A
+speedup appears when that traffic was a large share of the reference's
+runtime. It disappears when some other cost becomes the bottleneck. Four
+conditions follow from the measurements.
 
-The favourable condition is a wide MLP. At equal FLOPs the speedup rises
-from 1.59 at $f/d = 4$ to 2.12 at $f/d = 64$ (Table~\ref{tab:ratio}),
-because the intermediate volume the reference moves grows with the aspect
-ratio while its FLOPs and its weight traffic do not. At a fixed $d = 1024$
-the speedup rises with $f$ to 1.78. Every shape I measured with $f > d$ and
-a block size matched to it is faster than the reference.
-
-Two conditions limit the result. The first is the number of rows per expert.
-Expert weights are streamed by either implementation and are amortised over
-one group only, so once the mean group size approaches the tile height both
-become weight-bound. At $e = 128$ the mean group is 128 rows and the speedup
-is 1.03. Routing skew acts through the same channel, costing almost nothing
-at 8 experts and reducing the speedup from 1.49 to 1.39 at 64. The second
-condition is total work. At $m = 2048$ with a single expert there are only 8
-row tiles, too few to fill the pipeline, and the kernel is 5\% slower than
-the reference. The two remaining losses, at $d = 256$ and $d = 2048$, come
-from the single block-size rule rather than from the fusion, and per-shape
-tuning of $(b_m, b_i, b_j, b_k)$ is the first thing to try there.
+\begin{itemize}
+\itemsep2pt
+  \item \textbf{$f$ larger than $d$.} The removed traffic scales with $mf$,
+    while the input, the output, and the expert weights move either way. At
+    equal FLOPs the speedup goes from 1.59 at $f/d = 4$ to 2.12 at
+    $f/d = 64$.
+  \item \textbf{Enough tokens per expert.} An expert's three weight slabs
+    are $3df$ elements and they are read to serve only the rows routed to
+    that expert, so the arithmetic done per weight byte read is exactly the
+    group size. A small group means streaming a large weight matrix to do
+    very little arithmetic with it. The reference and the fused kernel read
+    the same weights, so both are then limited by that stream rather than by
+    anything the fusion changes. At $e = 128$ the mean group is 128 rows,
+    the two run at 28 TFLOP/s each, and the speedup falls to 1.03.
+  \item \textbf{Groups no smaller than the tile height $b_m$.} A group of
+    $s$ rows occupies $\lceil s / b_m \rceil$ whole tiles, so a group
+    shorter than a tile pays for rows it does not have. Routing skew acts
+    through this channel. It costs nothing at 8 experts, where groups are
+    2048 rows against $b_m = 256$, and takes the speedup from 1.49 to 1.39
+    at 64 experts.
+  \item \textbf{Block sizes matched to the shape.} At $d = 256$ the rule
+    gives tiles too small for the MXU and at $d = 2048$ it gives $b_j < d$,
+    costing 0.75 and 0.91. These are failures of the rule, not of the
+    fusion.
+\end{itemize}
 
 \end{document}
