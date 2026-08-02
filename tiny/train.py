@@ -27,17 +27,18 @@ def calculate_loss_acc(state: TrainState, params, batch: jnp.ndarray, mask: jnp.
 
     acc = jnp.argmax(logits, axis=2) == batch[..., 1:]
     avg_acc = acc.sum(where=mask) / (mask.sum() * batch_size)
+    avg_exact = jnp.all(acc | ~mask, axis=1).mean()
 
-    return avg_loss, avg_acc
+    return avg_loss, (avg_acc, avg_exact)
 
 
 @partial(jax.jit, static_argnums=1)
 def train_step(state: TrainState, get_batch: Callable[[Any], tuple[jnp.ndarray, jnp.ndarray]], key):
     batch, mask = get_batch(key)
     grad_fn = jax.value_and_grad(calculate_loss_acc, argnums=1, has_aux=True)
-    (loss, acc), grads = grad_fn(state, state.params, batch, mask)
+    (loss, (acc, exact)), grads = grad_fn(state, state.params, batch, mask)
     state = state.apply_gradients(grads=grads)
-    return state, loss, acc
+    return state, loss, acc, exact
 
 
 @hydra.main(version_base=None, config_path="config")
@@ -62,10 +63,12 @@ def main(cfg: DictConfig):
     seq_len = 4 * cfg.data.max_digits + 2  # n-digit multiplication
     for i in range(cfg.total_steps):
         batch_rng = jax.random.fold_in(rng, i)
-        state, loss, _ = train_step(state, get_batch, batch_rng)
+        state, loss, acc, exact = train_step(state, get_batch, batch_rng)
         train_history.append(
             {
                 "loss": float(loss),
+                "acc": float(acc),
+                "exact": float(exact),
                 "tokens": cfg.batch_size * (i + 1) * seq_len,
             }
         )
