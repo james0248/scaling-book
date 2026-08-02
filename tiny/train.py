@@ -59,13 +59,14 @@ def main(cfg: DictConfig):
 
     # Training loop - log every step
     train_history = []
+    seq_len = 4 * cfg.data.max_digits + 2  # n-digit multiplication
     for i in range(cfg.total_steps):
         batch_rng = jax.random.fold_in(rng, i)
         state, loss, _ = train_step(state, get_batch, batch_rng)
         train_history.append(
             {
                 "loss": float(loss),
-                "tokens": cfg.batch_size * (i + 1) * 3 * (cfg.data.max_digits + 1),
+                "tokens": cfg.batch_size * (i + 1) * seq_len,
             }
         )
 
