@@ -69,7 +69,7 @@ def run_view(df: pd.DataFrame, param_col: str, view_name: str, out_root: str = "
     per_dir.mkdir(parents=True, exist_ok=True)
 
     # Overlaid isoflop
-    fig, ax = plt.subplots(figsize=(5.2, 4.2))
+    fig, ax = plt.subplots(figsize=(4.9, 3.6))
     for i, r in enumerate(results):
         color = ISO_CMAP(i / max(len(results) - 1, 1))
         g = r["runs"]

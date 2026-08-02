@@ -127,35 +127,26 @@ def report_diagnostics(env: dict):
 def plot_envelope(loss_map, env, prefix):
     params = np.array([d["params"] for d in loss_map.values()])
     norm = mpl.colors.LogNorm(vmin=params.min(), vmax=params.max())
-    cmap = CURVE_CMAP
     loss_ticks = [0.8, 1.0, 1.2, 1.6, 2.0, 2.4]
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    for ax in axes:
-        for d in sorted(loss_map.values(), key=lambda d: -d["params"]):
-            ax.plot(d["flops"], d["loss"], color=cmap(norm(d["params"])), lw=0.6, alpha=0.8)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda v, p: f"{v:g}"))
-        ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-        ax.set_xlabel("FLOPs")
-        ax.set_ylabel("Training loss")
-        ax.grid(alpha=0.3)
+    fig, ax = plt.subplots(figsize=(5.4, 3.6))
+    for d in sorted(loss_map.values(), key=lambda d: -d["params"]):
+        ax.plot(d["flops"], d["loss"], color=CURVE_CMAP(norm(d["params"])), lw=0.6, alpha=0.8)
+    ax.scatter(env["flops"], env["loss"], color=GRAY, s=5, lw=0, zorder=4)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(env["flops"].min() / 2, env["flops"].max() * 2)
+    ax.set_ylim(env["loss"].min() * 0.96, env["loss"].max() * 1.06)
+    ax.set_yticks([t for t in loss_ticks
+                   if env["loss"].min() * 0.96 <= t <= env["loss"].max() * 1.06])
+    ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda v, p: f"{v:g}"))
+    ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    ax.set_xlabel("FLOPs")
+    ax.set_ylabel("Training loss")
+    ax.grid(alpha=0.3)
 
-    axes[0].scatter(env["flops"], env["loss"], color=GRAY, s=4, lw=0, zorder=4)
-    axes[0].set_yticks(loss_ticks)
-    axes[0].set_title("Training curves and their lower envelope")
-
-    axes[1].scatter(env["flops"], env["loss"], c=env["params"], cmap=cmap, norm=norm,
-                    s=6, lw=0, zorder=4)
-    axes[1].set_xlim(env["flops"].min() / 2, env["flops"].max() * 2)
-    axes[1].set_ylim(env["loss"].min() * 0.96, env["loss"].max() * 1.04)
-    axes[1].set_yticks([t for t in loss_ticks
-                        if env["loss"].min() * 0.96 <= t <= env["loss"].max() * 1.04])
-    axes[1].set_title("Envelope, coloured by the model that produced it")
-
-    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-    cbar = fig.colorbar(sm, ax=axes, ticks=[5e3, 2e4, 1e5, 5e5, 3e6])
+    sm = mpl.cm.ScalarMappable(norm=norm, cmap=CURVE_CMAP)
+    cbar = fig.colorbar(sm, ax=ax, ticks=[5e3, 2e4, 1e5, 5e5, 3e6])
     cbar.minorticks_off()
     cbar.ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(human_format))
     cbar.ax.tick_params(width=0.6)

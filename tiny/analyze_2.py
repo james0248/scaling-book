@@ -98,7 +98,7 @@ def fit_isoflops(runs: pd.DataFrame, pooled: bool = "trim") -> list[dict]:
 
 
 def plot_isoflops(results: list[dict], prefix: str = "approach_2"):
-    fig, ax = plt.subplots(figsize=(5.2, 4.2))
+    fig, ax = plt.subplots(figsize=(4.9, 3.6))
     for i, r in enumerate(results):
         color = ISO_CMAP(i / max(len(results) - 1, 1))
         g = r["runs"]
