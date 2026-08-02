@@ -63,7 +63,7 @@ def flops_per_token(n_layers, d_model, d_ffw, n_heads, n_kv, vocab_size):
     """
     Forward FLOPs/token for the MoE model (active, k=1 of n=4).
 
-    Same formula as dense (see tiny/FLOPS.md) plus per-layer router overhead:
+    Same formula as dense (see reports/chinchilla/FLOPS.md) plus per-layer router overhead:
       router linear:  2·S·D·n_experts
       router softmax: 5·S·k_experts        (top_k selection cost ignored)
       weight mul:     2·S·D·k_experts      (weights[..., None] * expert_out sum)
