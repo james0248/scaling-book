@@ -51,7 +51,8 @@ def main(cfg: DictConfig):
     rng, inp_rng, init_rng = jax.random.split(rng, 3)
 
     model_cfg = cfg.model.config
-    inp = jax.random.randint(inp_rng, (2, 2), 0, model_cfg.vocab_size)
+    seq_len = 4 * cfg.data.max_digits + 2
+    inp = jax.random.randint(inp_rng, (2, seq_len), 0, model_cfg.vocab_size)
     model = instantiate(model_cfg)
     params = model.init(init_rng, inp)
 
@@ -60,7 +61,6 @@ def main(cfg: DictConfig):
 
     # Training loop - log every step
     train_history = []
-    seq_len = 4 * cfg.data.max_digits + 2  # n-digit multiplication
     for i in range(cfg.total_steps):
         batch_rng = jax.random.fold_in(rng, i)
         state, loss, acc, exact = train_step(state, get_batch, batch_rng)

@@ -155,6 +155,8 @@ class AttentionBlock(nn.Module):
 
     n_heads: int
     n_kv: int
+    pos_embed: str = "rope"
+    use_qk_norm: bool = True
 
     dtype: jnp.dtype = jnp.bfloat16
 
@@ -171,8 +173,12 @@ class AttentionBlock(nn.Module):
         k = rearrange(k, "b s (k h) -> b s k h", h=d_head)
         v = rearrange(v, "b s (k h) -> b s k h", h=d_head)
 
-        q = apply_rope(nn.RMSNorm(dtype=self.dtype)(q), dtype=self.dtype)
-        k = apply_rope(nn.RMSNorm(dtype=self.dtype)(k), dtype=self.dtype)
+        if self.use_qk_norm:
+            q = nn.RMSNorm(dtype=self.dtype)(q)
+            k = nn.RMSNorm(dtype=self.dtype)(k)
+        if self.pos_embed == "rope":
+            q = apply_rope(q, dtype=self.dtype)
+            k = apply_rope(k, dtype=self.dtype)
 
         """
         here i've implemented the dot product attention manually, but this need extra care for fp32 conversion for softmax
@@ -194,6 +200,8 @@ class Transformer(nn.Module):
     n_heads: int
     n_kv: int
     vocab_size: int
+    pos_embed: str = "rope"
+    use_qk_norm: bool = True
 
     dtype: jnp.dtype = jnp.bfloat16
 
@@ -204,9 +212,15 @@ class Transformer(nn.Module):
         x = nn.Embed(num_embeddings=self.vocab_size, features=self.d_model, dtype=self.dtype)(
             token_ids
         )
+        if self.pos_embed == "absolute":
+            x = x + nn.Embed(num_embeddings=seq_len, features=self.d_model, dtype=self.dtype)(
+                jnp.arange(seq_len)
+            )
         mask = jnp.tril(jnp.ones((seq_len, seq_len))).astype(jnp.bool)
         for _ in range(self.n_layers):
-            x = x + AttentionBlock(self.n_heads, self.n_kv)(nn.RMSNorm(dtype=self.dtype)(x), mask)
+            x = x + AttentionBlock(self.n_heads, self.n_kv, self.pos_embed, self.use_qk_norm)(
+                nn.RMSNorm(dtype=self.dtype)(x), mask
+            )
             x = x + DenseMLP(self.d_ffw)(nn.RMSNorm(dtype=self.dtype)(x))
 
         x = nn.RMSNorm(dtype=self.dtype)(x)
