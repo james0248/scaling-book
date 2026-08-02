@@ -9,4 +9,4 @@ config:
   d_ffw: 160
   n_heads: 5
   n_kv: 5
-  vocab_size: 12 # digits 0-9, '+', '='
+  vocab_size: 12 # digits 0-9, '*', '='
