@@ -26,6 +26,38 @@ def analyse(run_dirs, fit_below: float):
     return C, L - pred, fit, train
 
 
+def cut_sensitivity(cuts, chosen: float):
+    """Fitted frontier exponent a as a function of the approach-3 compute cut"""
+    fig, ax = plt.subplots(figsize=(5.4, 3.6))
+    colors = {"dense": "tab:blue", "MoE": "tab:red"}
+    for name, dirs in FAMILIES.items():
+        if not all(os.path.isdir(d) for d in dirs):
+            continue
+        N, D, L, C = load_runs(dirs, "params")
+        exps, used = [], []
+        for cut in cuts:
+            keep = C <= cut
+            if keep.sum() < 30:
+                exps.append(np.nan)
+                used.append(int(keep.sum()))
+                continue
+            fit = fit_parametric(N[keep], D[keep], L[keep])
+            exps.append(fit["beta"] / (fit["alpha"] + fit["beta"]))
+            used.append(int(keep.sum()))
+        ax.plot(cuts, exps, "o-", color=colors[name], label=name)
+        print(f"  {name}: " + "  ".join(f"{c:.0e}:{a:.3f}({n})"
+                                        for c, a, n in zip(cuts, exps, used)))
+    ax.axvline(chosen, color="gray", ls="--", lw=1, label=f"chosen cut {chosen:.0e}")
+    ax.set_xscale("log")
+    ax.set_xlabel("compute cut for the approach-3 fit")
+    ax.set_ylabel("fitted exponent $a$")
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig("plots/02_cut_sensitivity.png", dpi=150)
+    print("wrote plots/02_cut_sensitivity.png")
+
+
 def transition_rate(C, resid, train, edges, k: float = 3.0):
     """Fraction of runs per compute bin sitting more than k sigma below the surface
 
@@ -45,6 +77,7 @@ def transition_rate(C, resid, train, edges, k: float = 3.0):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fit_below", type=float, default=3.0e14)
+    parser.add_argument("--a3_cut", type=float, default=6.6e14)
     args = parser.parse_args()
 
     edges = np.logspace(12.0, 15.8, 9)
@@ -94,6 +127,9 @@ def main():
     os.makedirs("plots", exist_ok=True)
     fig.savefig("plots/01_transition.png", dpi=150)
     print("\nwrote plots/01_transition.png")
+
+    print("\ncut sensitivity:")
+    cut_sensitivity(np.geomspace(1.5e14, 6.3e15, 12), chosen=args.a3_cut)
 
 
 if __name__ == "__main__":
