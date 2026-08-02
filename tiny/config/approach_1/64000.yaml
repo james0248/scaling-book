@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - /approach_1_base
+  - _self_
+
+total_steps: 64000
+
+hydra:
+  sweeper:
+    params:
+      model: 9k,10k,12k,106k,132k,158k,189k,227k,257k,302k,359k,401k,461k,534k,624k,727k,831k,926k,1_00m
