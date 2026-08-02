@@ -1,5 +1,5 @@
 defaults:
-  - model: 20k
+  - model: 5k
   - _self_
 
 seed: 42
